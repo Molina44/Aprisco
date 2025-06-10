@@ -12,7 +12,7 @@ function obtenerCabras() {
     return $result->fetch_all(MYSQLI_ASSOC);
 }
 
-// Función recursiva para el árbol genealógico
+// Función recursiva para el árbol genealógico con prevención de ciclos
 function generarArbolGenealogico($id_cabra, $generacion = 0, $max_profundidad = 10, $visitados = []) {
     global $conexion;
     
@@ -75,13 +75,20 @@ function generarArbolGenealogico($id_cabra, $generacion = 0, $max_profundidad = 
 function visualizarArbol($arbol) {
     if (empty($arbol)) return '';
     
+    $nombre = $arbol['cabra']['nombre'] ?? 'Desconocido';
+    $id = $arbol['cabra']['id_cabra'] ?? '?';
+    $raza = $arbol['cabra']['raza'] ?? 'No especificada';
+    $sexo = ($arbol['cabra']['sexo'] ?? '') == 'M' ? 'Macho' : 'Hembra';
+    $fecha = $arbol['cabra']['fecha_nacimiento'] ?? 'Desconocida';
+    
     $html = '<div class="nodo" style="margin-left: ' . ($arbol['generacion'] * 30) . 'px">';
     $html .= '<div class="info-cabra">';
-    $html .= '<strong>' . htmlspecialchars($arbol['cabra']['nombre']) . '</strong>';
+    $html .= '<strong>' . htmlspecialchars($nombre) . '</strong>';
     $html .= '<div class="detalles-cabra">';
-    $html .= 'ID: ' . $arbol['cabra']['id_cabra'] . ' | ';
-    $html .= ($arbol['cabra']['sexo'] == 'M' ? 'Macho' : 'Hembra') . ' | ';
-    $html .= 'Nac: ' . date('d/m/Y', strtotime($arbol['cabra']['fecha_nacimiento']));
+    $html .= 'ID: ' . $id . ' | ';
+    $html .= $sexo . ' | ';
+    $html .= 'Raza: ' . htmlspecialchars($raza) . ' | ';
+    $html .= 'Nac: ' . (($fecha !== 'Desconocida') ? date('d/m/Y', strtotime($fecha)) : $fecha);
     $html .= '</div></div>';
     
     $html .= '<div class="relaciones">';
@@ -103,75 +110,12 @@ function visualizarArbol($arbol) {
     return $html;
 }
 
+
 // Función para obtener todas las razas
 function obtenerRazas() {
     global $conexion;
     $result = $conexion->query("SELECT * FROM razas ORDER BY nombre");
     return $result->fetch_all(MYSQLI_ASSOC);
-}
-
-// Función para registrar una nueva cabra con validación de padres
-function registrarNuevaCabra($datos) {
-    global $conexion;
-    
-    // Validar datos
-    $errores = [];
-    
-    // Validar padres
-    if (!empty($datos['id_madre']) && !validarSexoParentesco($datos['id_madre'], 'H')) {
-        $errores[] = "La madre seleccionada no es una hembra";
-    }
-    
-    if (!empty($datos['id_padre']) && !validarSexoParentesco($datos['id_padre'], 'M')) {
-        $errores[] = "El padre seleccionado no es un macho";
-    }
-    
-    // Validar fecha de nacimiento
-    $fechaActual = new DateTime();
-    $fechaNacimiento = new DateTime($datos['fecha_nacimiento']);
-    if ($fechaNacimiento > $fechaActual) {
-        $errores[] = "La fecha de nacimiento no puede ser futura";
-    }
-    
-    // Validar partos solo para hembras
-    if ($datos['sexo'] == 'M' && !empty($datos['partos'])) {
-        $errores[] = "Los machos no pueden tener registros de partos";
-    }
-    
-    if (!empty($errores)) {
-        return ['exito' => false, 'errores' => $errores];
-    }
-    
-    // Insertar en base de datos
-    $observaciones = $datos['observaciones'] ?? '';
-    
-    $sql = "INSERT INTO cabras (
-        imagen, nombre, fecha_nacimiento, color, sexo, id_raza, 
-        id_madre, id_padre, partos, fecha_compra, observaciones
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    $stmt = $conexion->prepare($sql);
-    
-    $stmt->bind_param(
-        'sssssiiiiss',
-        $datos['imagen'],
-        $datos['nombre'],
-        $datos['fecha_nacimiento'],
-        $datos['color'],
-        $datos['sexo'],
-        $datos['id_raza'],
-        $id_madre,
-        $id_padre,
-        $partos,
-        $fecha_compra,
-        $observaciones
-    );
-
-    if ($stmt->execute()) {
-        return ['exito' => true, 'id_cabra' => $conexion->insert_id];
-    } else {
-        return ['exito' => false, 'errores' => ["Error al registrar la cabra: " . $conexion->error]];
-    }
 }
 
 // Función para obtener exámenes físicos de una cabra
@@ -207,7 +151,7 @@ function obtenerCabraPorId($id_cabra) {
     
     $sql = "SELECT c.*, r.nombre AS raza 
             FROM cabras c
-            JOIN razas r ON c.id_raza = r.id_raza
+            LEFT JOIN razas r ON c.id_raza = r.id_raza
             WHERE c.id_cabra = ?";
             
     $stmt = $conexion->prepare($sql);
@@ -373,14 +317,15 @@ function calcularEdad($fecha_nacimiento) {
     return $edad;
 }
 
-
+//////////////
+// Función para validar padres
 function validarPadres($id_madre, $id_padre, $id_cabra_actual = null) {
     global $conexion;
     $errores = [];
     
     // Validar existencia y sexo de la madre
     if ($id_madre) {
-        $sql = "SELECT sexo FROM cabras WHERE id_cabra = ?";
+        $sql = "SELECT sexo, fecha_nacimiento FROM cabras WHERE id_cabra = ?";
         $stmt = $conexion->prepare($sql);
         $stmt->bind_param('i', $id_madre);
         $stmt->execute();
@@ -398,7 +343,7 @@ function validarPadres($id_madre, $id_padre, $id_cabra_actual = null) {
     
     // Validar existencia y sexo del padre
     if ($id_padre) {
-        $sql = "SELECT sexo FROM cabras WHERE id_cabra = ?";
+        $sql = "SELECT sexo, fecha_nacimiento FROM cabras WHERE id_cabra = ?";
         $stmt = $conexion->prepare($sql);
         $stmt->bind_param('i', $id_padre);
         $stmt->execute();
@@ -430,26 +375,174 @@ function validarPadres($id_madre, $id_padre, $id_cabra_actual = null) {
         $errores[] = "La madre y el padre no pueden ser la misma cabra";
     }
     
+    // Validar edades de los padres
+    if ($id_madre || $id_padre) {
+        // Obtener fecha de nacimiento de la cabra actual
+        $sql = "SELECT fecha_nacimiento FROM cabras WHERE id_cabra = ?";
+        $stmt = $conexion->prepare($sql);
+        $stmt->bind_param('i', $id_cabra_actual);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result->num_rows === 1) {
+            $cabra = $result->fetch_assoc();
+            $fechaNacimiento = new DateTime($cabra['fecha_nacimiento']);
+            
+            // Validar madre
+            if ($id_madre) {
+                $fechaNacMadre = new DateTime($madre['fecha_nacimiento']);
+                if ($fechaNacMadre > $fechaNacimiento) {
+                    $errores[] = "La madre debe ser mayor que la cría";
+                }
+            }
+            
+            // Validar padre
+            if ($id_padre) {
+                $fechaNacPadre = new DateTime($padre['fecha_nacimiento']);
+                if ($fechaNacPadre > $fechaNacimiento) {
+                    $errores[] = "El padre debe ser mayor que la cría";
+                }
+            }
+        }
+    }
+    
     return $errores;
 }
 
-function obtenerAncestros($id_cabra, $profundidad = 5) {
-    $ancestros = [];
+// Función para registrar una nueva cabra
+function registrarNuevaCabra($datos) {
+    global $conexion;
     
-    if ($profundidad <= 0) return $ancestros;
+    // Validar datos
+    $errores = [];
     
-    $cabra = obtenerCabraPorId($id_cabra);
+    // Validar padres
+    $errores_padres = validarPadres($datos['id_madre'] ?? null, $datos['id_padre'] ?? null);
+    $errores = array_merge($errores, $errores_padres);
     
-    if ($cabra['id_madre']) {
-        $ancestros[] = $cabra['id_madre'];
-        $ancestros = array_merge($ancestros, obtenerAncestros($cabra['id_madre'], $profundidad - 1));
+    // Validar fecha de nacimiento
+    $fechaActual = new DateTime();
+    $fechaNacimiento = new DateTime($datos['fecha_nacimiento']);
+    if ($fechaNacimiento > $fechaActual) {
+        $errores[] = "La fecha de nacimiento no puede ser futura";
     }
     
-    if ($cabra['id_padre']) {
-        $ancestros[] = $cabra['id_padre'];
-        $ancestros = array_merge($ancestros, obtenerAncestros($cabra['id_padre'], $profundidad - 1));
+    // Validar partos solo para hembras
+    if ($datos['sexo'] == 'M' && !empty($datos['partos'])) {
+        $errores[] = "Los machos no pueden tener registros de partos";
     }
     
-    return array_unique($ancestros);
+    if (!empty($errores)) {
+        return ['exito' => false, 'errores' => $errores];
+    }
+    
+    // Insertar en base de datos
+    $sql = "INSERT INTO cabras (
+        imagen, nombre, fecha_nacimiento, color, sexo, id_raza, 
+        id_madre, id_padre, partos, fecha_compra, observaciones
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    
+    $stmt = $conexion->prepare($sql);
+    
+    // Manejar valores nulos
+    $id_madre = !empty($datos['id_madre']) ? $datos['id_madre'] : null;
+    $id_padre = !empty($datos['id_padre']) ? $datos['id_padre'] : null;
+    $partos = !empty($datos['partos']) ? $datos['partos'] : null;
+    $fecha_compra = !empty($datos['fecha_compra']) ? $datos['fecha_compra'] : null;
+    
+    $stmt->bind_param(
+        'sssssiiiiss',
+        $datos['imagen'],
+        $datos['nombre'],
+        $datos['fecha_nacimiento'],
+        $datos['color'],
+        $datos['sexo'],
+        $datos['id_raza'],
+        $id_madre,
+        $id_padre,
+        $partos,
+        $fecha_compra,
+        $datos['observaciones']
+    );
+    
+    if ($stmt->execute()) {
+        return ['exito' => true, 'id_cabra' => $conexion->insert_id];
+    } else {
+        return ['exito' => false, 'errores' => ["Error al registrar la cabra: " . $conexion->error]];
+    }
 }
+
+// Función para actualizar una cabra
+function actualizarCabra($id_cabra, $datos) {
+    global $conexion;
+    
+    // Validar datos
+    $errores = [];
+    
+    // Validar padres
+    $errores_padres = validarPadres($datos['id_madre'] ?? null, $datos['id_padre'] ?? null, $id_cabra);
+    $errores = array_merge($errores, $errores_padres);
+    
+    // Validar fecha de nacimiento
+    $fechaActual = new DateTime();
+    $fechaNacimiento = new DateTime($datos['fecha_nacimiento']);
+    if ($fechaNacimiento > $fechaActual) {
+        $errores[] = "La fecha de nacimiento no puede ser futura";
+    }
+    
+    // Validar partos solo para hembras
+    if ($datos['sexo'] == 'M' && !empty($datos['partos'])) {
+        $errores[] = "Los machos no pueden tener registros de partos";
+    }
+    
+    if (!empty($errores)) {
+        return ['exito' => false, 'errores' => $errores];
+    }
+    
+    // Actualizar en base de datos
+    $sql = "UPDATE cabras SET
+        imagen = ?,
+        nombre = ?,
+        fecha_nacimiento = ?,
+        color = ?,
+        sexo = ?,
+        id_raza = ?,
+        id_madre = ?,
+        id_padre = ?,
+        partos = ?,
+        fecha_compra = ?,
+        observaciones = ?
+    WHERE id_cabra = ?";
+    
+    $stmt = $conexion->prepare($sql);
+    
+    // Manejar valores nulos
+    $id_madre = !empty($datos['id_madre']) ? $datos['id_madre'] : null;
+    $id_padre = !empty($datos['id_padre']) ? $datos['id_padre'] : null;
+    $partos = !empty($datos['partos']) ? $datos['partos'] : null;
+    $fecha_compra = !empty($datos['fecha_compra']) ? $datos['fecha_compra'] : null;
+    
+    $stmt->bind_param(
+        'sssssiiiissi',
+        $datos['imagen'],
+        $datos['nombre'],
+        $datos['fecha_nacimiento'],
+        $datos['color'],
+        $datos['sexo'],
+        $datos['id_raza'],
+        $id_madre,
+        $id_padre,
+        $partos,
+        $fecha_compra,
+        $datos['observaciones'],
+        $id_cabra
+    );
+    
+    if ($stmt->execute()) {
+        return ['exito' => true];
+    } else {
+        return ['exito' => false, 'errores' => ["Error al actualizar la cabra: " . $conexion->error]];
+    }
+}
+
 ?>

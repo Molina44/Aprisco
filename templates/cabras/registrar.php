@@ -82,40 +82,54 @@ $machos = array_filter($cabras, function($cabra) {
                 </div>
             </div>
             
-            <div class="columna">
-                <h3>Información Genealógica</h3>
-                
-                <div class="campo-formulario">
-                    <label for="id_madre">Madre (hembra)</label>
-                    <select id="id_madre" name="id_madre">
-                        <option value="">Seleccione una madre</option>
-                        <?php foreach ($hembras as $hembra): ?>
-                            <option value="<?= $hembra['id_cabra'] ?>">
-                                <?= htmlspecialchars($hembra['nombre']) ?> (ID: <?= $hembra['id_cabra'] ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <div class="campo-formulario">
-                    <label for="id_padre">Padre (macho)</label>
-                    <select id="id_padre" name="id_padre">
-                        <option value="">Seleccione un padre</option>
-                        <?php foreach ($machos as $macho): ?>
-                            <option value="<?= $macho['id_cabra'] ?>">
-                                <?= htmlspecialchars($macho['nombre']) ?> (ID: <?= $macho['id_cabra'] ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <div class="campo-formulario">
-                    <label>Relación Genealógica</label>
-                    <div id="relacion-genealogica" class="info-relacion">
-                        <p>Seleccione madre y padre para ver la relación</p>
-                    </div>
-                </div>
-            </div>
+          <div class="columna">
+    <h3>Información Genealógica</h3>
+    
+<div class="campo-formulario">
+    <label for="id_madre">Madre (hembra)</label>
+    <select id="id_madre" name="id_madre" class="select-parentesco" data-tipo="madre">
+        <option value="">Seleccione una madre</option>
+        <?php foreach ($hembras as $hembra): 
+            $fechaNacimiento = !empty($hembra['fecha_nacimiento']) ? date('Y-m-d', strtotime($hembra['fecha_nacimiento'])) : ''; ?>
+            <option value="<?= $hembra['id_cabra'] ?>" 
+                    data-sexo="<?= $hembra['sexo'] ?>" 
+                    data-fecha-nac="<?= htmlspecialchars($fechaNacimiento) ?>">
+                <?= htmlspecialchars($hembra['nombre']) ?> (Identificacion: <?= $hembra['id_cabra'] ?>)
+            </option>
+        <?php endforeach; ?>
+    </select>
+    <div class="mensaje-error" id="error-madre" style="display:none;"></div>
+</div>
+
+<div class="campo-formulario">
+    <label for="id_padre">Padre (macho)</label>
+    <select id="id_padre" name="id_padre" class="select-parentesco" data-tipo="padre">
+        <option value="">Seleccione un padre</option>
+        <?php foreach ($machos as $macho): 
+            $fechaNacimiento = !empty($macho['fecha_nacimiento']) ? date('Y-m-d', strtotime($macho['fecha_nacimiento'])) : ''; ?>
+            <option value="<?= $macho['id_cabra'] ?>" 
+                    data-sexo="<?= $macho['sexo'] ?>" 
+                    data-fecha-nac="<?= htmlspecialchars($fechaNacimiento) ?>">
+                <?= htmlspecialchars($macho['nombre']) ?> (Identificacion: <?= $macho['id_cabra'] ?>)
+            </option>
+        <?php endforeach; ?>
+    </select>
+    <div class="mensaje-error" id="error-padre" style="display:none;"></div>
+</div>
+
+    <div class="campo-formulario">
+        <label>Relación Genealógica</label>
+        <div id="relacion-genealogica" class="info-relacion">
+            <p>Seleccione madre y padre para ver la relación</p>
+        </div>
+    </div>
+    
+    <!-- Panel de validación genealógica -->
+    <div id="panel-validacion-genealogica" class="panel-validacion" style="display:none;">
+        <h4>Validación de Parentesco</h4>
+        <ul id="lista-validacion"></ul>
+    </div>
+</div>
             
             <div class="columna">
                 <h3>Información Adicional</h3>
@@ -171,6 +185,140 @@ $machos = array_filter($cabras, function($cabra) {
 </div>
 
 <script>
+
+
+    // Validación en tiempo real de padres
+document.querySelectorAll('.select-parentesco').forEach(select => {
+    select.addEventListener('change', function() {
+        const tipo = this.dataset.tipo;
+        const errorElement = document.getElementById(`error-${tipo}`);
+        const idSeleccionado = this.value;
+        const fechaNacimiento = new Date(document.getElementById('fecha_nacimiento').value);
+        
+        // Limpiar mensajes previos
+        errorElement.style.display = 'none';
+        errorElement.textContent = '';
+        
+        if (idSeleccionado) {
+            const opcion = this.querySelector(`option[value="${idSeleccionado}"]`);
+            const fechaNacPadre = new Date(opcion.dataset.fechaNac);
+            
+            // Validar sexo
+            const sexoEsperado = tipo === 'madre' ? 'H' : 'M';
+            if (opcion.dataset.sexo !== sexoEsperado) {
+                errorElement.textContent = `Error: La cabra seleccionada debe ser ${tipo === 'madre' ? 'hembra' : 'macho'}`;
+                errorElement.style.display = 'block';
+                this.value = '';
+            }
+            
+            // Validar edad (padre debe ser más viejo)
+            if (fechaNacimiento && fechaNacPadre && fechaNacPadre > fechaNacimiento) {
+                errorElement.textContent = `Error: El ${tipo} debe ser mayor que la cabra que está registrando`;
+                errorElement.style.display = 'block';
+                this.value = '';
+            }
+        }
+        
+        // Actualizar relación genealógica y validación
+        actualizarRelacion();
+        validarParentescoCompleto();
+    });
+});
+
+// Validar cuando cambia la fecha de nacimiento
+document.getElementById('fecha_nacimiento').addEventListener('change', function() {
+    validarParentescoCompleto();
+});
+
+// Función para validar todo el parentesco
+function validarParentescoCompleto() {
+    const panel = document.getElementById('panel-validacion-genealogica');
+    const lista = document.getElementById('lista-validacion');
+    lista.innerHTML = '';
+    
+    const idMadre = document.getElementById('id_madre').value;
+    const idPadre = document.getElementById('id_padre').value;
+    const fechaNacimiento = new Date(document.getElementById('fecha_nacimiento').value);
+    
+    // Solo mostrar panel si hay padres seleccionados
+    if (!idMadre && !idPadre) {
+        panel.style.display = 'none';
+        return;
+    }
+    
+    panel.style.display = 'block';
+    
+    // Validar madre
+    if (idMadre) {
+        const opcionMadre = document.querySelector(`#id_madre option[value="${idMadre}"]`);
+        const fechaNacMadre = new Date(opcionMadre.dataset.fechaNac);
+        
+        if (fechaNacimiento && fechaNacMadre && fechaNacMadre > fechaNacimiento) {
+            const li = document.createElement('li');
+            li.className = 'invalido';
+            li.innerHTML = '<i class="fas fa-times-circle"></i> La madre debe ser mayor que la cría';
+            lista.appendChild(li);
+        } else {
+            const li = document.createElement('li');
+            li.className = 'valido';
+            li.innerHTML = '<i class="fas fa-check-circle"></i> Madre válida';
+            lista.appendChild(li);
+        }
+    }
+    
+    // Validar padre
+    if (idPadre) {
+        const opcionPadre = document.querySelector(`#id_padre option[value="${idPadre}"]`);
+        const fechaNacPadre = new Date(opcionPadre.dataset.fechaNac);
+        
+        if (fechaNacimiento && fechaNacPadre && fechaNacPadre > fechaNacimiento) {
+            const li = document.createElement('li');
+            li.className = 'invalido';
+            li.innerHTML = '<i class="fas fa-times-circle"></i> El padre debe ser mayor que la cría';
+            lista.appendChild(li);
+        } else {
+            const li = document.createElement('li');
+            li.className = 'valido';
+            li.innerHTML = '<i class="fas fa-check-circle"></i> Padre válido';
+            lista.appendChild(li);
+        }
+    }
+    
+    // Validar que no sean la misma cabra
+    if (idMadre && idPadre && idMadre === idPadre) {
+        const li = document.createElement('li');
+        li.className = 'invalido';
+        li.innerHTML = '<i class="fas fa-times-circle"></i> La madre y el padre no pueden ser la misma cabra';
+        lista.appendChild(li);
+    }
+    
+    // Validar que no sean padres de sí mismos
+    const idCabraActual = <?= $cabra['id_cabra'] ?? 'null' ?>;
+    if (idCabraActual) {
+        if (idMadre && idMadre == idCabraActual) {
+            const li = document.createElement('li');
+            li.className = 'invalido';
+            li.innerHTML = '<i class="fas fa-times-circle"></i> Una cabra no puede ser madre de sí misma';
+            lista.appendChild(li);
+        }
+        
+        if (idPadre && idPadre == idCabraActual) {
+            const li = document.createElement('li');
+            li.className = 'invalido';
+            li.innerHTML = '<i class="fas fa-times-circle"></i> Una cabra no puede ser padre de sí misma';
+            lista.appendChild(li);
+        }
+    }
+    
+    // Si no hay errores, mostrar mensaje positivo
+    if (lista.children.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'valido';
+        li.innerHTML = '<i class="fas fa-check-circle"></i> Relación genealógica válida';
+        lista.appendChild(li);
+    }
+}
+
     // Previsualización de imagen
     document.getElementById('imagen').addEventListener('change', function(e) {
         const preview = document.getElementById('preview-imagen');
@@ -274,3 +422,57 @@ $machos = array_filter($cabras, function($cabra) {
         });
     });
 </script>
+
+<style>
+/* Estilos para validación genealógica */
+.panel-validacion {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.panel-validacion h4 {
+    margin-top: 0;
+    color: #2c3e50;
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 8px;
+}
+
+#lista-validacion {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+#lista-validacion li {
+    padding: 8px 5px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+}
+
+#lista-validacion li:last-child {
+    border-bottom: none;
+}
+
+#lista-validacion li.valido {
+    color: #28a745;
+}
+
+#lista-validacion li.invalido {
+    color: #dc3545;
+}
+
+#lista-validacion i {
+    margin-right: 8px;
+    font-size: 1.2em;
+}
+
+.mensaje-error {
+    color: #dc3545;
+    font-size: 0.85rem;
+    margin-top: 5px;
+}
+</style>

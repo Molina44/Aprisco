@@ -71,46 +71,102 @@ function generarArbolGenealogico($id_cabra, $generacion = 0, $max_profundidad = 
     
     return $arbol;
 }
+////////////////////////////////////////////////////////////////
 // Función para visualizar el árbol
-function visualizarArbol($arbol) {
-    if (empty($arbol)) return '';
+function visualizarArbol($arbol, $nivel = 0) {
+    // Limitar a 4 generaciones (niveles 0 a 3)
+    if (empty($arbol) || $nivel > 3) {
+        return '';
+    }
     
+    // Obtener detalles de la cabra
     $nombre = $arbol['cabra']['nombre'] ?? 'Desconocido';
-    $id = $arbol['cabra']['id_cabra'] ?? '?';
     $raza = $arbol['cabra']['raza'] ?? 'No especificada';
     $sexo = ($arbol['cabra']['sexo'] ?? '') == 'M' ? 'Macho' : 'Hembra';
     $fecha = $arbol['cabra']['fecha_nacimiento'] ?? 'Desconocida';
+    $generacion = $arbol['generacion'] ?? 0;
+    $id = $arbol['cabra']['id'] ?? '';
     
-    $html = '<div class="nodo" style="margin-left: ' . ($arbol['generacion'] * 30) . 'px">';
-    $html .= '<div class="info-cabra">';
-    $html .= '<strong>' . htmlspecialchars($nombre) . '</strong>';
-    $html .= '<div class="detalles-cabra">';
-    $html .= 'ID: ' . $id . ' | ';
-    $html .= $sexo . ' | ';
-    $html .= 'Raza: ' . htmlspecialchars($raza) . ' | ';
-    $html .= 'Nac: ' . (($fecha !== 'Desconocida') ? date('d/m/Y', strtotime($fecha)) : $fecha);
-    $html .= '</div></div>';
+    // Formatear fecha
+    $fechaFormateada = ($fecha !== 'Desconocida') ? date('d/m/Y', strtotime($fecha)) : $fecha;
     
-    $html .= '<div class="relaciones">';
-    if ($arbol['madre']) {
-        $html .= '<div class="relacion madre">';
-        $html .= '<div class="etiqueta">Madre:</div>';
-        $html .= visualizarArbol($arbol['madre']);
-        $html .= '</div>';
+    // Crear atributos adicionales
+    $tooltipInfo = "ID: $id | Generación: $generacion";
+    $claseGeneracion = $generacion > 0 ? 'generacion-' . $generacion : '';
+    if ($generacion < 0) {
+        $claseGeneracion = 'generacion-hijo';
     }
     
-    if ($arbol['padre']) {
-        $html .= '<div class="relacion padre">';
-        $html .= '<div class="etiqueta">Padre:</div>';
-        $html .= visualizarArbol($arbol['padre']);
-        $html .= '</div>';
+    // Iniciar HTML del nodo
+    $html = '<div class="nodo ' . $claseGeneracion . '" ';
+    $html .= 'style="margin-left: ' . (abs($generacion) * 30) . 'px" ';
+    $html .= 'title="' . htmlspecialchars($tooltipInfo) . '" ';
+    $html .= 'data-goat-id="' . htmlspecialchars($id) . '" ';
+    $html .= 'data-generacion="' . $generacion . '">';
+    
+    // 1. SECCIÓN DE PADRES
+    $htmlPadres = '';
+    if ($nivel < 3) { // Solo mostrar padres si estamos en niveles 0-2
+        if (!empty($arbol['padre']) || !empty($arbol['madre'])) {
+            $htmlPadres .= '<div class="padres">';
+            
+            if (!empty($arbol['padre'])) {
+                $htmlPadres .= '<div class="relacion padre">';
+                $htmlPadres .= '<div class="etiqueta">Padre</div>';
+                $htmlPadres .= visualizarArbol($arbol['padre'], $nivel + 1);
+                $htmlPadres .= '</div>';
+            }
+
+            if (!empty($arbol['madre'])) {
+                $htmlPadres .= '<div class="relacion madre">';
+                $htmlPadres .= '<div class="etiqueta">Madre</div>';
+                $htmlPadres .= visualizarArbol($arbol['madre'], $nivel + 1);
+                $htmlPadres .= '</div>';
+            }
+            
+            $htmlPadres .= '</div>';
+        }
     }
-    $html .= '</div></div>';
+    
+    // 2. INFORMACIÓN DE LA CABRA ACTUAL
+    $htmlCabra = '<div class="info-cabra">';
+    $htmlCabra .= '<strong>' . htmlspecialchars($nombre) . '</strong>';
+    $htmlCabra .= '<div class="detalles-cabra">';
+    $htmlCabra .= '<div class="detalle-item"><span class="icono-sexo">' . ($sexo == 'Macho' ? '♂' : '♀') . '</span> ' . $sexo . '</div>';
+    $htmlCabra .= '<div class="detalle-item"><span class="icono-raza">🐐</span> ' . htmlspecialchars($raza) . '</div>';
+    $htmlCabra .= '<div class="detalle-item"><span class="icono-fecha">📅</span> ' . $fechaFormateada . '</div>';
+    if ($generacion != 0) {
+        $htmlCabra .= '<div class="detalle-item"><span class="icono-gen">🧬</span> Gen. ' . abs($generacion) . '</div>';
+    }
+    $htmlCabra .= '</div></div>';
+
+    // 3. SECCIÓN DE HIJOS
+    $htmlHijos = '';
+    if ($nivel < 3) { // Solo mostrar hijos si estamos en niveles 0-2
+        if (!empty($arbol['hijos']) && is_array($arbol['hijos'])) {
+            $htmlHijos .= '<div class="hijos">';
+            $htmlHijos .= '<div class="etiqueta-hijos">Hijos</div>';
+            
+            foreach ($arbol['hijos'] as $hijo) {
+                // Asignar generación negativa a los hijos
+                $hijo['generacion'] = ($generacion - 1);
+                $htmlHijos .= '<div class="hijo">';
+                $htmlHijos .= visualizarArbol($hijo, $nivel + 1);
+                $htmlHijos .= '</div>';
+            }
+            
+            $htmlHijos .= '</div>';
+        }
+    }
+    
+    // Ensamblar secciones
+    $html .= $htmlPadres . $htmlCabra . $htmlHijos;
+    $html .= '</div>';
     
     return $html;
 }
 
-
+//////////////////////////////////////////////////////////////
 // Función para obtener todas las razas
 function obtenerRazas() {
     global $conexion;
@@ -544,5 +600,4 @@ function actualizarCabra($id_cabra, $datos) {
         return ['exito' => false, 'errores' => ["Error al actualizar la cabra: " . $conexion->error]];
     }
 }
-
 ?>

@@ -26,8 +26,9 @@ if (empty($arbol)) {
     
     </div>
     
-    <h3>Árbol Genealógico</h3>
-    <div class="arbol-genealogico">
-        <?= visualizarArbol($arbol) ?>
-    </div>
+ <h3>Árbol Genealógico</h3>
+<div class="arbol-genealogico">
+    <?= visualizarArbol($arbol) ?>
+</div>
+
 </div>  
